@@ -153,4 +153,41 @@ deactivate api
 tray -> tray: Show success notification
 deactivate tray
 
+== Device Management (Admin) ==
+
+admin -> api: GET /api/v1/devices\nX-Master-Key: {master_key}
+activate api
+api -> api: Verify master API key
+api -> db: SELECT * FROM devices
+activate db
+db --> api: Device list
+deactivate db
+api --> admin: Return all devices
+deactivate api
+
+admin -> api: DELETE /api/v1/devices/{id}\nX-Master-Key: {master_key}
+activate api
+api -> api: Verify master API key
+api -> db: DELETE device\nDELETE status_pings\nDELETE device_status
+activate db
+db --> api: Deleted
+deactivate db
+api -> redis: DELETE cache\ndevice_status:{device_id}
+activate redis
+redis --> api: Cache cleared
+deactivate redis
+api --> admin: 204 No Content
+deactivate api
+
+== Historical Data Query (Public) ==
+
+device -> api: GET /api/v1/history\n?device_id={id}&limit=100&days=7
+activate api
+api -> db: SELECT status_pings\nJOIN devices\nORDER BY timestamp DESC
+activate db
+db --> api: Ping history
+deactivate db
+api --> device: Return ping records\n(device_name, timestamp, etc)
+deactivate api
+
 @enduml

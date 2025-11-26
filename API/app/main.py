@@ -4,7 +4,7 @@ from datetime import datetime
 from app.config import get_settings
 from app.core.database import init_db
 from app.core.redis import init_redis, close_redis
-from app.api.routes import devices, ping, status
+from app.api.routes import devices, ping, status, history
 from app.tasks.status_checker import start_status_checker, stop_status_checker
 
 settings = get_settings()
@@ -31,9 +31,16 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(devices.router, prefix=f"/api/{settings.API_VERSION}", tags=["devices"])
+app.include_router(
+    devices.router, prefix=f"/api/{settings.API_VERSION}", tags=["devices"]
+)
 app.include_router(ping.router, prefix=f"/api/{settings.API_VERSION}", tags=["ping"])
-app.include_router(status.router, prefix=f"/api/{settings.API_VERSION}", tags=["status"])
+app.include_router(
+    status.router, prefix=f"/api/{settings.API_VERSION}", tags=["status"]
+)
+app.include_router(
+    history.router, prefix=f"/api/{settings.API_VERSION}", tags=["history"]
+)
 
 
 @app.get("/health")

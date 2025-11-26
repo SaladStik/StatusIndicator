@@ -130,33 +130,10 @@ curl -X POST http://localhost:9759/api/v1/devices \
 
 This will return a device API key. Save this key - you'll need it for the tray app.
 
-## Accessing from Outside CasaOS
-
-### Option 1: Port Forwarding
-
-Forward port 9759 on your router to your CasaOS server's IP.
-
-### Option 2: Reverse Proxy (Recommended)
-
-If you're using Nginx Proxy Manager or Traefik in CasaOS:
-
-1. Add a new proxy host
-2. Point to `http://casaos-ip:9759`
-3. Enable SSL with Let's Encrypt
-4. Access via `https://status.yourdomain.com`
-
-### Option 3: CasaOS App Store
-
-You can also create a custom CasaOS app:
-
-1. Go to CasaOS App Store
-2. Click "Import"
-3. Use this Docker Compose URL (if you publish it)
-
 ## Updating the API
 
 ```bash
-cd /DATA/AppData/StatusIndicatorAPI/API
+cd /DATA/AppData/StatusIndicator/API
 git pull
 docker-compose down
 docker-compose up -d --build
