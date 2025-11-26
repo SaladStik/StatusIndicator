@@ -1,0 +1,96 @@
+@startuml Application Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultTextAlignment center
+
+title Status Indicator API - Application Flow
+
+actor "User Devices" as devices
+participant "Tray App\n(Windows/Mac)" as tray
+participant "Docker Container" as docker
+database "API Server" as api
+database "Database" as db
+participant "Status Checker\n(Background Job)" as checker
+
+== System Initialization ==
+
+devices -> tray: Start application on boot
+activate tray
+tray -> tray: Load API key from config
+tray -> docker: Ping with API key
+activate docker
+docker -> api: Authenticate request
+activate api
+api -> db: Verify API key
+activate db
+db --> api: Valid device
+deactivate db
+api -> db: Store ping record\n(timestamp, device_id)
+db --> api: Ping recorded
+api --> docker: 200 OK
+deactivate api
+docker --> tray: Success
+deactivate docker
+tray -> tray: Show "Online" status
+deactivate tray
+
+== Regular Ping Cycle (~15 minutes) ==
+
+loop Every ~15 minutes
+    tray -> docker: Send heartbeat ping
+    activate docker
+    docker -> api: POST /ping with API key
+    activate api
+    api -> db: INSERT ping record
+    activate db
+    db --> api: Success
+    deactivate db
+    api -> db: UPDATE last_ping_at
+    db --> api: Updated
+    api --> docker: 200 OK
+    deactivate api
+    docker --> tray: Ping acknowledged
+    deactivate docker
+end
+
+== Background Status Monitoring ==
+
+loop Every few minutes
+    checker -> db: Query all devices
+    activate checker
+    activate db
+    db --> checker: Return device list\nwith last_ping_at
+    deactivate db
+    
+    checker -> checker: Check if last_ping_at\n> 20 minutes ago
+    
+    alt Ping within 20 minutes
+        checker -> db: UPDATE status = 'online'
+        activate db
+        db --> checker: Updated
+        deactivate db
+    else No ping for 20+ minutes
+        checker -> db: UPDATE status = 'offline'
+        activate db
+        db --> checker: Updated
+        deactivate db
+    end
+    deactivate checker
+end
+
+== Status Query ==
+
+devices -> docker: GET /status/:device_id
+activate docker
+docker -> api: Query device status
+activate api
+api -> db: SELECT status\nFROM device_status
+activate db
+db --> api: Return status\n(online/offline)
+deactivate db
+api --> docker: Status response
+deactivate api
+docker --> devices: Display current status
+deactivate docker
+
+@enduml

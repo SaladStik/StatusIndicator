@@ -1,0 +1,56 @@
+@startuml Database Schema
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b>x</b>
+!define foreign_key(x) <i>x</i>
+
+skinparam classAttributeIconSize 0
+
+' Database Schema for Status Indicator API
+
+entity "devices" {
+  primary_key(device_id) : UUID
+  --
+  device_name : VARCHAR(255)
+  api_key : VARCHAR(255) UNIQUE
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+  is_active : BOOLEAN
+}
+
+entity "status_pings" {
+  primary_key(ping_id) : UUID
+  --
+  foreign_key(device_id) : UUID
+  ping_timestamp : TIMESTAMP
+  created_at : TIMESTAMP
+}
+
+entity "device_status" {
+  primary_key(status_id) : UUID
+  --
+  foreign_key(device_id) : UUID
+  status : ENUM('online', 'offline')
+  last_ping_at : TIMESTAMP
+  status_changed_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+devices ||--o{ status_pings : "has many"
+devices ||--|| device_status : "has current"
+
+note right of devices
+  Stores device information
+  and authentication keys
+end note
+
+note right of status_pings
+  Logs every ping from devices
+  for historical tracking
+end note
+
+note right of device_status
+  Current status of each device
+  Updated by backend checker
+end note
+
+@enduml

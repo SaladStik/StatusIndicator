@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Status Indicator Settings</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>Status Indicator Settings</h1>
+      
+      <form id="settings-form">
+        <div class="form-group">
+          <label for="api-url">API URL</label>
+          <input 
+            type="text" 
+            id="api-url" 
+            placeholder="http://localhost:9759" 
+            required
+          />
+        </div>
+        
+        <div class="form-group">
+          <label for="api-key">Device API Key</label>
+          <input 
+            type="password" 
+            id="api-key" 
+            placeholder="Your device API key" 
+            required
+          />
+          <button type="button" id="toggle-key" class="toggle-btn">Show</button>
+        </div>
+        
+        <div class="button-group">
+          <button type="button" id="test-btn" class="secondary">Test Connection</button>
+          <button type="submit" id="save-btn">Save Settings</button>
+        </div>
+      </form>
+      
+      <div class="form-group" style="margin-top: 24px;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="autostart-checkbox" />
+          <span>Run on startup</span>
+        </label>
+      </div>
+      
+      <div id="status-msg" class="status-msg"></div>
+      
+      <div class="info">
+        <p>The app will ping the API every 15 minutes in the background.</p>
+        <p>You can manually trigger a ping from the tray menu.</p>
+      </div>
+    </main>
+  </body>
+</html>
