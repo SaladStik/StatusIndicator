@@ -11,7 +11,7 @@ entity "devices" {
   primary_key(device_id) : UUID
   --
   device_name : VARCHAR(255)
-  api_key : VARCHAR(255) UNIQUE
+  api_key_hash : VARCHAR(255) UNIQUE
   created_at : TIMESTAMP
   updated_at : TIMESTAMP
   is_active : BOOLEAN
@@ -35,22 +35,43 @@ entity "device_status" {
   updated_at : TIMESTAMP
 }
 
+package "Redis Cache" as redis {
+  note as N1
+    device_status:{device_id}
+    TTL: 300 seconds (5 min)
+    
+    Cached status data
+    Invalidated on ping
+    Invalidated on status change
+  end note
+}
+
 devices ||--o{ status_pings : "has many"
 devices ||--|| device_status : "has current"
+device_status .. redis : "cached in"
 
 note right of devices
   Stores device information
-  and authentication keys
+  API keys are hashed (bcrypt)
+  Master API key for device creation
 end note
 
 note right of status_pings
   Logs every ping from devices
   for historical tracking
+  (5-minute intervals)
 end note
 
 note right of device_status
   Current status of each device
-  Updated by backend checker
+  Updated by background checker
+  (20-minute offline threshold)
+end note
+
+note right of redis
+  Fast caching layer
+  Reduces DB queries
+  Auto-invalidates on changes
 end note
 
 @enduml

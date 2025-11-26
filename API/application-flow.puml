@@ -5,92 +5,152 @@ skinparam defaultTextAlignment center
 
 title Status Indicator API - Application Flow
 
-actor "User Devices" as devices
-participant "Tray App\n(Windows/Mac)" as tray
-participant "Docker Container" as docker
-database "API Server" as api
-database "Database" as db
-participant "Status Checker\n(Background Job)" as checker
+actor "Admin" as admin
+actor "User Device" as device
+participant "Tauri Tray App\n(Windows/macOS)" as tray
+participant "FastAPI\n(Port 9759)" as api
+database "PostgreSQL" as db
+database "Redis Cache" as redis
+participant "APScheduler\n(Background)" as scheduler
+participant "Gmail SMTP" as email
 
-== System Initialization ==
+== Device Creation (One-time Admin Setup) ==
 
-devices -> tray: Start application on boot
-activate tray
-tray -> tray: Load API key from config
-tray -> docker: Ping with API key
-activate docker
-docker -> api: Authenticate request
+admin -> api: POST /api/v1/devices\nX-Master-Key: {master_key}
 activate api
-api -> db: Verify API key
+api -> api: Verify master API key
+api -> api: Generate device API key\n(random 32-char token)
+api -> db: INSERT device\n(hash API key with bcrypt)
 activate db
-db --> api: Valid device
+db --> api: Device created
 deactivate db
-api -> db: Store ping record\n(timestamp, device_id)
-db --> api: Ping recorded
-api --> docker: 200 OK
+api --> admin: Return plaintext API key\n(store securely, shown once!)
 deactivate api
-docker --> tray: Success
-deactivate docker
-tray -> tray: Show "Online" status
+
+== Tray App Initialization ==
+
+device -> tray: Start application\n(auto-start on boot)
+activate tray
+tray -> tray: Load settings from\ntauri-plugin-store\n(API URL + API key)
+tray -> api: POST /api/v1/ping\nX-API-Key: {device_key}\n(immediate startup ping)
+activate api
+api -> api: Verify device API key\n(bcrypt compare)
+alt Valid API key
+    api -> db: INSERT status_ping
+    activate db
+    db --> api: Ping recorded
+    deactivate db
+    api -> db: UPDATE device_status\nSET last_ping_at = NOW()
+    activate db
+    db --> api: Status updated
+    deactivate db
+    api -> redis: DELETE cache key\ndevice_status:{device_id}
+    activate redis
+    redis --> api: Cache invalidated
+    deactivate redis
+    api --> tray: 200 OK
+else Invalid API key
+    api -> email: Send security alert\nto admin email
+    activate email
+    email --> api: Alert sent
+    deactivate email
+    api --> tray: 401 Unauthorized
+    tray -> tray: Show error notification
+end
+deactivate api
+tray -> tray: Start background loop\n(ping every 5 minutes)
 deactivate tray
 
-== Regular Ping Cycle (~15 minutes) ==
+== Regular Ping Cycle ==
 
-loop Every ~15 minutes
-    tray -> docker: Send heartbeat ping
-    activate docker
-    docker -> api: POST /ping with API key
+loop Every 5 minutes
+    tray -> api: POST /api/v1/ping\nX-API-Key: {device_key}
+    activate tray
     activate api
-    api -> db: INSERT ping record
+    api -> api: Authenticate device
+    api -> db: INSERT status_ping
     activate db
     db --> api: Success
     deactivate db
-    api -> db: UPDATE last_ping_at
+    api -> db: UPDATE device_status\nlast_ping_at
+    activate db
     db --> api: Updated
-    api --> docker: 200 OK
+    deactivate db
+    api -> redis: Invalidate cache
+    activate redis
+    redis --> api: Cache cleared
+    deactivate redis
+    api --> tray: 200 OK
     deactivate api
-    docker --> tray: Ping acknowledged
-    deactivate docker
+    deactivate tray
 end
 
 == Background Status Monitoring ==
 
-loop Every few minutes
-    checker -> db: Query all devices
-    activate checker
+loop Every 5 minutes (APScheduler)
+    scheduler -> db: SELECT * FROM device_status\nWHERE last_ping_at < NOW() - 20 minutes
+    activate scheduler
     activate db
-    db --> checker: Return device list\nwith last_ping_at
+    db --> scheduler: Offline devices list
     deactivate db
     
-    checker -> checker: Check if last_ping_at\n> 20 minutes ago
-    
-    alt Ping within 20 minutes
-        checker -> db: UPDATE status = 'online'
+    alt Devices went offline
+        scheduler -> db: UPDATE device_status\nSET status = 'offline'
         activate db
-        db --> checker: Updated
+        db --> scheduler: Status updated
         deactivate db
-    else No ping for 20+ minutes
-        checker -> db: UPDATE status = 'offline'
-        activate db
-        db --> checker: Updated
-        deactivate db
+        scheduler -> redis: Bulk DELETE\ndevice_status:{device_id}
+        activate redis
+        redis --> scheduler: Caches invalidated
+        deactivate redis
     end
-    deactivate checker
+    deactivate scheduler
 end
 
-== Status Query ==
+== Status Query (with Redis Caching) ==
 
-devices -> docker: GET /status/:device_id
-activate docker
-docker -> api: Query device status
+device -> api: GET /api/v1/status
 activate api
-api -> db: SELECT status\nFROM device_status
-activate db
-db --> api: Return status\n(online/offline)
-deactivate db
-api --> docker: Status response
+api -> redis: GET device_status:*
+activate redis
+alt Cache hit
+    redis --> api: Cached status data
+    deactivate redis
+    api -> api: Calculate\ntime_since_last_ping_seconds
+    api --> device: Return cached status\n+ time_since_last_ping_seconds
+else Cache miss
+    redis --> api: null
+    deactivate redis
+    api -> db: SELECT * FROM device_status
+    activate db
+    db --> api: Current status data
+    deactivate db
+    api -> api: Calculate\ntime_since_last_ping_seconds
+    api -> redis: SET device_status:{device_id}\nEX 300 (5-min TTL)
+    activate redis
+    redis --> api: Cached
+    deactivate redis
+    api --> device: Return status\n+ time_since_last_ping_seconds
+end
 deactivate api
-docker --> devices: Display current status
-deactivate docker
+
+== Manual Actions ==
+
+device -> tray: Right-click tray icon\n→ "Ping Now"
+activate tray
+tray -> api: POST /api/v1/ping\n(manual trigger)
+activate api
+api -> db: Record ping
+activate db
+db --> api: Success
+deactivate db
+api -> redis: Invalidate cache
+activate redis
+redis --> api: Cleared
+deactivate redis
+api --> tray: 200 OK
+deactivate api
+tray -> tray: Show success notification
+deactivate tray
 
 @enduml
