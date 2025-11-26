@@ -120,8 +120,24 @@ async fn is_launch_on_startup() -> Result<bool, String> {
 }
 
 async fn ping_loop(state: Arc<Mutex<Settings>>) {
+    // Send initial ping on startup
+    {
+        let settings = state.lock().unwrap().clone();
+        
+        if !settings.api_key.is_empty() {
+            let client = reqwest::Client::new();
+            let url = format!("{}/api/v1/ping", settings.api_url);
+            
+            let _ = client
+                .post(&url)
+                .header("X-API-Key", &settings.api_key)
+                .send()
+                .await;
+        }
+    }
+    
     loop {
-        tokio::time::sleep(Duration::from_secs(900)).await; // 15 minutes
+        tokio::time::sleep(Duration::from_secs(300)).await; // 5 minutes
         
         let settings = state.lock().unwrap().clone();
         

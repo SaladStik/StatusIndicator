@@ -2,6 +2,8 @@
 
 This guide explains how to register devices and get them pinging your Status Indicator API.
 
+Once completed you can use the relevant variables in the tray app.
+
 ## Prerequisites
 
 - API running and accessible (via `docker-compose up -d`)
