@@ -1,10 +1,16 @@
-use tauri::{Manager, State};
+use tauri::{Manager, State, RunEvent, WindowEvent};
 use tauri::tray::TrayIconBuilder;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri_plugin_store::StoreExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+
+// macOS-specific imports for menu bar app
+#[cfg(target_os = "macos")]
+use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Settings {
@@ -156,7 +162,15 @@ async fn ping_loop(state: Arc<Mutex<Settings>>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    // On macOS, hide from Dock immediately (before app setup)
+    #[cfg(target_os = "macos")]
+    {
+        let mtm = MainThreadMarker::new().expect("must be on the main thread");
+        let app = NSApplication::sharedApplication(mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    }
+    
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
@@ -188,16 +202,29 @@ pub fn run() {
                 .items(&[&show_settings, &ping_now, &quit])
                 .build()?;
             
-            // Create tray icon
+            // Create tray icon using included bytes
+            let icon_bytes = include_bytes!("../icons/32x32.png");
+            let icon = tauri::image::Image::from_bytes(icon_bytes)?;
+            
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(icon)
                 .tooltip("Status Indicator")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
                         "show_settings" => {
                             if let Some(window) = app.get_webview_window("settings") {
+                                // On macOS, show in Dock temporarily when settings is open
+                                #[cfg(target_os = "macos")]
+                                {
+                                    let mtm = MainThreadMarker::new().expect("must be on main thread");
+                                    let ns_app = NSApplication::sharedApplication(mtm);
+                                    ns_app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+                                    ns_app.activate();
+                                }
+                                
                                 let _ = window.show();
+                                let _ = window.unminimize();
                                 let _ = window.set_focus();
                             }
                         }
@@ -244,6 +271,31 @@ pub fn run() {
             set_launch_on_startup,
             is_launch_on_startup
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    
+    app.run(|app_handle, event| {
+        match event {
+            RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. } => {
+                // Hide the window instead of closing it
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    let _ = window.hide();
+                    
+                    // On macOS, hide from Dock when window is closed
+                    #[cfg(target_os = "macos")]
+                    {
+                        let mtm = MainThreadMarker::new().expect("must be on main thread");
+                        let ns_app = NSApplication::sharedApplication(mtm);
+                        ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+                    }
+                }
+                api.prevent_close();
+            }
+            RunEvent::ExitRequested { api, .. } => {
+                // Prevent the app from exiting when all windows are closed
+                api.prevent_exit();
+            }
+            _ => {}
+        }
+    });
 }

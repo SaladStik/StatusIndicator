@@ -18,18 +18,14 @@
         "center": true,
         "visible": false,
         "decorations": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "closable": true
       }
     ],
-    "trayIcon": {
-      "id": "main-tray",
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": false,
-      "tooltip": "Status Indicator"
-    },
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -40,6 +36,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": null,
+      "frameworks": [],
+      "infoPlist": "Info.plist",
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": null
+    }
   }
 }
