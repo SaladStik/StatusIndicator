@@ -2,7 +2,7 @@ name: Update Notion Code Structure
 
 on:
   push:
-    branches: [main, develop]
+    branches: ['**']
   workflow_dispatch:
 
 jobs:
