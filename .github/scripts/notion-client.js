@@ -406,6 +406,70 @@ class NotionStructureUpdater {
   }
 
   /**
+   * Mark a branch toggle as deleted — change background to red and
+   * update the title to show it's been deleted.
+   */
+  async markBranchDeleted(pageId, branchName) {
+    try {
+      console.log(
+        '📄 Searching for "keeping track of you 78234729374" toggle...',
+      );
+      const parentToggle = await this.findParentToggle(pageId);
+      if (!parentToggle) {
+        console.error("❌ Parent toggle not found.");
+        return;
+      }
+
+      console.log(`🔀 Looking for branch toggle: ${branchName}...`);
+      const children = await this.getBlockChildren(parentToggle.id);
+      let branchBlock = null;
+      for (const child of children) {
+        if (child.type === "toggle") {
+          const text = child.toggle?.rich_text
+            ?.map((rt) => rt.plain_text)
+            .join("")
+            .trim();
+          if (
+            text === `🔀 ${branchName}` ||
+            text === branchName ||
+            text === `❌ ${branchName} (deleted)`
+          ) {
+            branchBlock = child;
+            break;
+          }
+        }
+      }
+
+      if (!branchBlock) {
+        console.log(`⚠️  No toggle found for branch: ${branchName}`);
+        return;
+      }
+
+      console.log(`✅ Found branch toggle: ${branchBlock.id}`);
+      console.log("🔴 Updating to deleted state (red background)...");
+
+      await this.notion.blocks.update({
+        block_id: branchBlock.id,
+        toggle: {
+          rich_text: [
+            {
+              type: "text",
+              text: { content: `❌ ${branchName} (deleted)` },
+              annotations: { bold: true, strikethrough: true, color: "red" },
+            },
+          ],
+          color: "red_background",
+        },
+      });
+
+      console.log("✅ Branch toggle marked as deleted.");
+    } catch (error) {
+      console.error("❌ Error marking branch as deleted:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Read the structure hash from the newest commit toggle's callout.
    * Searches inside branch sub-toggles for the most recent commit.
    */

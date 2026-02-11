@@ -19,6 +19,9 @@ async function main() {
   const COMMIT_AUTHOR = process.env.COMMIT_AUTHOR;
   const GIT_DIFF = process.env.GIT_DIFF || "";
   const COMMIT_COUNT = parseInt(process.env.COMMIT_COUNT || "0", 10);
+  const EVENT_NAME = process.env.EVENT_NAME || "push";
+  const DELETED_REF = process.env.DELETED_REF || "";
+  const DELETED_REF_TYPE = process.env.DELETED_REF_TYPE || "";
 
   // Validate required variables
   if (!NOTION_API_KEY || !NOTION_PAGE_ID) {
@@ -29,6 +32,19 @@ async function main() {
   }
 
   try {
+    // Handle branch deletion events
+    if (
+      EVENT_NAME === "delete" &&
+      DELETED_REF_TYPE === "branch" &&
+      DELETED_REF
+    ) {
+      console.log(`🗑️  Branch deleted: ${DELETED_REF}`);
+      const notionClient = new NotionStructureUpdater(NOTION_API_KEY);
+      await notionClient.markBranchDeleted(NOTION_PAGE_ID, DELETED_REF);
+      console.log("\n✅ Branch toggle marked as deleted!");
+      return;
+    }
+
     // Initialize clients
     const parser = new DirectoryParser();
     const generator = new MermaidGenerator();
