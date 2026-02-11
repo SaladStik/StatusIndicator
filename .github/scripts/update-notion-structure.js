@@ -18,6 +18,7 @@ async function main() {
   const COMMIT_MESSAGE = process.env.COMMIT_MESSAGE;
   const COMMIT_AUTHOR = process.env.COMMIT_AUTHOR;
   const GIT_DIFF = process.env.GIT_DIFF || "";
+  const COMMIT_COUNT = parseInt(process.env.COMMIT_COUNT || "0", 10);
 
   // Validate required variables
   if (!NOTION_API_KEY || !NOTION_PAGE_ID) {
@@ -86,11 +87,13 @@ async function main() {
 
     // Step 5: Update Notion page (new commit is prepended inside the parent toggle)
     console.log("📤 Updating Notion page...");
+    console.log(`   📊 Total commits: ${COMMIT_COUNT}`);
     await notionClient.updateCodeStructure(
       NOTION_PAGE_ID,
       mermaidCode,
       versionEntry,
       currentHash,
+      COMMIT_COUNT,
     );
 
     console.log("\n✅ Successfully updated Notion page!");

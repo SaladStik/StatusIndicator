@@ -203,7 +203,13 @@ class NotionStructureUpdater {
    * Main entry point — finds the "keeping track of you 78234729374" toggle,
    * appends the new commit at the bottom (1 API call, scales forever).
    */
-  async updateCodeStructure(pageId, mermaidCode, versionEntry, structureHash) {
+  async updateCodeStructure(
+    pageId,
+    mermaidCode,
+    versionEntry,
+    structureHash,
+    commitCount = 0,
+  ) {
     try {
       console.log(
         '📄 Searching for "keeping track of you 78234729374" toggle...',
@@ -229,11 +235,18 @@ class NotionStructureUpdater {
         structureHash,
       );
 
+      // Build the children array — add a divider every 15 commits
+      const children = [newCommitBlock];
+      if (commitCount > 0 && commitCount % 15 === 0) {
+        console.log(`   ➖ Adding divider (commit #${commitCount})`);
+        children.push({ object: "block", type: "divider", divider: {} });
+      }
+
       // Append new commit to the parent toggle (goes to bottom)
       console.log("📤 Appending new commit entry...");
       await this.notion.blocks.children.append({
         block_id: parentToggle.id,
-        children: [newCommitBlock],
+        children: children,
       });
 
       console.log("✅ Successfully updated Notion page!");
