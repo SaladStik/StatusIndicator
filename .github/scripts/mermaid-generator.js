@@ -148,7 +148,7 @@ class MermaidGenerator {
           prevNodeId = ghostDirId;
         }
 
-        // Create the ghost file node at the end of the chain
+        // Created the ghost file node at the end of the chain
         const fileName = parts[parts.length - 1];
         const ghostFileId = `Node${this.nodeCounter++}`;
         ghostLines.push(
