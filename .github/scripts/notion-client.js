@@ -3,16 +3,57 @@ const { Client } = require("@notionhq/client");
 class NotionStructureUpdater {
   constructor(apiKey) {
     this.notion = new Client({ auth: apiKey });
+    this._lastRequestTime = 0;
+    this._minRequestInterval = 350; // ~3 req/s with safety margin
+    this._maxRetries = 5;
+  }
+
+  /**
+   * Rate-limited wrapper around Notion API calls.
+   * Enforces minimum interval between requests and retries on 429 / transient errors.
+   */
+  async _rateLimitedCall(fn) {
+    for (let attempt = 0; attempt <= this._maxRetries; attempt++) {
+      // Enforce minimum interval between requests
+      const now = Date.now();
+      const elapsed = now - this._lastRequestTime;
+      if (elapsed < this._minRequestInterval) {
+        await new Promise((r) =>
+          setTimeout(r, this._minRequestInterval - elapsed),
+        );
+      }
+      this._lastRequestTime = Date.now();
+
+      try {
+        return await fn();
+      } catch (error) {
+        const status = error?.status ?? error?.code;
+        const isRateLimit = status === 429;
+        const isTransient = status === 502 || status === 503 || status === 504;
+        const isConflict = status === 409;
+
+        if ((isRateLimit || isTransient || isConflict) && attempt < this._maxRetries) {
+          // Notion returns retry-after in seconds for 429s
+          const retryAfter = isRateLimit
+            ? (parseInt(error?.headers?.["retry-after"], 10) || 1) * 1000
+            : Math.min(1000 * Math.pow(2, attempt), 30000);
+          console.log(
+            `   ⏳ Notion API ${status} — retrying in ${retryAfter}ms (attempt ${attempt + 1}/${this._maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, retryAfter));
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   /**
    * Find the toggle block titled "keeping track of you 78234729374" on the page.
    */
   async findParentToggle(pageId) {
-    const blocks = await this.notion.blocks.children.list({
-      block_id: pageId,
-    });
-    return blocks.results.find(
+    const blocks = await this.getBlockChildren(pageId);
+    return blocks.find(
       (block) =>
         block.type === "toggle" &&
         block.toggle?.rich_text?.some((rt) =>
@@ -30,10 +71,12 @@ class NotionStructureUpdater {
     const children = [];
     let cursor;
     do {
-      const response = await this.notion.blocks.children.list({
-        block_id: blockId,
-        start_cursor: cursor,
-      });
+      const response = await this._rateLimitedCall(() =>
+        this.notion.blocks.children.list({
+          block_id: blockId,
+          start_cursor: cursor,
+        }),
+      );
       children.push(...response.results);
       cursor = response.has_more ? response.next_cursor : undefined;
     } while (cursor);
@@ -327,33 +370,37 @@ class NotionStructureUpdater {
         // Branch toggle exists — append the commit inside it
         console.log(`✅ Found existing branch toggle: ${existingBranchId}`);
         console.log("📤 Appending commit to branch toggle...");
-        appendResult = await this.notion.blocks.children.append({
-          block_id: existingBranchId,
-          children: commitBlocks,
-        });
+        appendResult = await this._rateLimitedCall(() =>
+          this.notion.blocks.children.append({
+            block_id: existingBranchId,
+            children: commitBlocks,
+          }),
+        );
       } else {
         // Create a new branch toggle with the commit as its first child
         console.log(`🆕 Creating new branch toggle: ${branchName}`);
-        appendResult = await this.notion.blocks.children.append({
-          block_id: parentToggle.id,
-          children: [
-            {
-              object: "block",
-              type: "toggle",
-              toggle: {
-                rich_text: [
-                  {
-                    type: "text",
-                    text: { content: `🔀 ${branchName}` },
-                    annotations: { bold: true },
-                  },
-                ],
-                color: "blue_background",
-                children: commitBlocks,
+        appendResult = await this._rateLimitedCall(() =>
+          this.notion.blocks.children.append({
+            block_id: parentToggle.id,
+            children: [
+              {
+                object: "block",
+                type: "toggle",
+                toggle: {
+                  rich_text: [
+                    {
+                      type: "text",
+                      text: { content: `🔀 ${branchName}` },
+                      annotations: { bold: true },
+                    },
+                  ],
+                  color: "blue_background",
+                  children: commitBlocks,
+                },
               },
-            },
-          ],
-        });
+            ],
+          }),
+        );
       }
 
       // Second API call: append commit message callout + mermaid diagram
@@ -392,10 +439,12 @@ class NotionStructureUpdater {
         secondaryBlocks.push(this.buildMermaidCodeBlock(mermaidCode));
 
         console.log("💬 Appending commit message & mermaid diagram...");
-        await this.notion.blocks.children.append({
-          block_id: commitToggleId,
-          children: secondaryBlocks,
-        });
+        await this._rateLimitedCall(() =>
+          this.notion.blocks.children.append({
+            block_id: commitToggleId,
+            children: secondaryBlocks,
+          }),
+        );
       }
 
       console.log("✅ Successfully updated Notion page!");
@@ -448,19 +497,21 @@ class NotionStructureUpdater {
       console.log(`✅ Found branch toggle: ${branchBlock.id}`);
       console.log("🔴 Updating to deleted state (red background)...");
 
-      await this.notion.blocks.update({
-        block_id: branchBlock.id,
-        toggle: {
-          rich_text: [
-            {
-              type: "text",
-              text: { content: `❌ ${branchName} (deleted)` },
-              annotations: { bold: true, strikethrough: true, color: "red" },
-            },
-          ],
-          color: "red_background",
-        },
-      });
+      await this._rateLimitedCall(() =>
+        this.notion.blocks.update({
+          block_id: branchBlock.id,
+          toggle: {
+            rich_text: [
+              {
+                type: "text",
+                text: { content: `❌ ${branchName} (deleted)` },
+                annotations: { bold: true, strikethrough: true, color: "red" },
+              },
+            ],
+            color: "red_background",
+          },
+        }),
+      );
 
       console.log("✅ Branch toggle marked as deleted.");
     } catch (error) {
