@@ -145,48 +145,6 @@ class NotionStructureUpdater {
       },
     });
 
-    // Full commit message in a grey callout with a nested toggle
-    if (versionEntry.commitMessage) {
-      toggleChildren.push({
-        object: "block",
-        type: "callout",
-        callout: {
-          rich_text: [],
-          icon: { type: "emoji", emoji: "💬" },
-          color: "gray_background",
-          children: [
-            {
-              object: "block",
-              type: "toggle",
-              toggle: {
-                rich_text: [
-                  {
-                    type: "text",
-                    text: { content: "Click To View Commit Message" },
-                    annotations: { bold: true },
-                  },
-                ],
-                children: [
-                  {
-                    object: "block",
-                    type: "paragraph",
-                    paragraph: {
-                      rich_text: [
-                        {
-                          type: "text",
-                          text: { content: versionEntry.commitMessage },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      });
-    }
-
     // Commit link
     if (versionEntry.commitUrl) {
       toggleChildren.push({
@@ -264,6 +222,52 @@ class NotionStructureUpdater {
   }
 
   /**
+   * Build the grey callout containing a toggle with the full commit message.
+   * This must be appended in a separate API call because Notion limits
+   * nesting depth to 2 levels per append.
+   */
+  buildCommitMessageCallout(commitMessage) {
+    return {
+      object: "block",
+      type: "callout",
+      callout: {
+        rich_text: [],
+        icon: { type: "emoji", emoji: "💬" },
+        color: "gray_background",
+        children: [
+          {
+            object: "block",
+            type: "toggle",
+            toggle: {
+              rich_text: [
+                {
+                  type: "text",
+                  text: { content: "Click To View Commit Message" },
+                  annotations: { bold: true },
+                },
+              ],
+              children: [
+                {
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: {
+                    rich_text: [
+                      {
+                        type: "text",
+                        text: { content: commitMessage },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  /**
    * Main entry point — finds the "keeping track of you 78234729374" toggle,
    * then finds or creates a branch sub-toggle and appends the commit there.
    */
@@ -314,18 +318,19 @@ class NotionStructureUpdater {
         branchName,
       );
 
+      let appendResult;
       if (existingBranchId) {
         // Branch toggle exists — append the commit inside it
         console.log(`✅ Found existing branch toggle: ${existingBranchId}`);
         console.log("📤 Appending commit to branch toggle...");
-        await this.notion.blocks.children.append({
+        appendResult = await this.notion.blocks.children.append({
           block_id: existingBranchId,
           children: commitBlocks,
         });
       } else {
         // Create a new branch toggle with the commit as its first child
         console.log(`🆕 Creating new branch toggle: ${branchName}`);
-        await this.notion.blocks.children.append({
+        appendResult = await this.notion.blocks.children.append({
           block_id: parentToggle.id,
           children: [
             {
@@ -345,6 +350,44 @@ class NotionStructureUpdater {
             },
           ],
         });
+      }
+
+      // Second API call: append the commit message callout inside the commit toggle.
+      // This is separate because Notion limits nesting to 2 levels per append.
+      if (versionEntry.commitMessage) {
+        let commitToggleId;
+
+        if (existingBranchId) {
+          // We appended directly — the commit toggle is in the result
+          const commitToggleBlock = appendResult.results?.find(
+            (b) => b.type === "toggle",
+          );
+          commitToggleId = commitToggleBlock?.id;
+        } else {
+          // We created a new branch toggle — the commit toggle is nested inside it
+          const branchToggleBlock = appendResult.results?.find(
+            (b) => b.type === "toggle",
+          );
+          if (branchToggleBlock) {
+            const branchChildren = await this.getBlockChildren(
+              branchToggleBlock.id,
+            );
+            const commitToggleBlock = branchChildren.find(
+              (b) => b.type === "toggle",
+            );
+            commitToggleId = commitToggleBlock?.id;
+          }
+        }
+
+        if (commitToggleId) {
+          console.log("💬 Appending commit message callout...");
+          await this.notion.blocks.children.append({
+            block_id: commitToggleId,
+            children: [
+              this.buildCommitMessageCallout(versionEntry.commitMessage),
+            ],
+          });
+        }
       }
 
       console.log("✅ Successfully updated Notion page!");
