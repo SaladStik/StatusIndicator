@@ -35,4 +35,6 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           cd .github/scripts
+          export COMMIT_AUTHOR=$(git log -1 --format='%an')
+          export GIT_DIFF=$(git diff --name-status HEAD~1 HEAD 2>/dev/null || echo "")
           node update-notion-structure.js
