@@ -113,7 +113,7 @@ class NotionStructureUpdater {
               content:
                 `Version: ${versionEntry.version}\n` +
                 `Branch: ${versionEntry.branch}\n` +
-                `${versionEntry.commitMessage?.substring(0, 100)}\n` +
+                `${versionEntry.commitMessage || ""}\n` +
                 `Hash: ${structureHash}`,
             },
           },
