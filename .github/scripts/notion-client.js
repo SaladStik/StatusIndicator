@@ -96,6 +96,26 @@ class NotionStructureUpdater {
   }
 
   /**
+   * Find an existing branch sub-toggle inside the parent toggle.
+   * Returns the block ID if found, or null.
+   */
+  async findBranchToggle(parentToggleId, branchName) {
+    const children = await this.getBlockChildren(parentToggleId);
+    for (const child of children) {
+      if (child.type === "toggle") {
+        const text = child.toggle?.rich_text
+          ?.map((rt) => rt.plain_text)
+          .join("")
+          .trim();
+        if (text === `🔀 ${branchName}` || text === branchName) {
+          return child.id;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Build the toggle block for a new commit entry.
    */
   buildCommitToggle(mermaidCode, versionEntry, structureHash) {
@@ -201,7 +221,7 @@ class NotionStructureUpdater {
 
   /**
    * Main entry point — finds the "keeping track of you 78234729374" toggle,
-   * appends the new commit at the bottom (1 API call, scales forever).
+   * then finds or creates a branch sub-toggle and appends the commit there.
    */
   async updateCodeStructure(
     pageId,
@@ -235,19 +255,53 @@ class NotionStructureUpdater {
         structureHash,
       );
 
-      // Build the children array — add a divider every 15 commits
-      const children = [newCommitBlock];
+      // Build the commit blocks array — add a divider every 15 commits
+      const commitBlocks = [newCommitBlock];
       if (commitCount > 0 && commitCount % 15 === 0) {
         console.log(`   ➖ Adding divider (commit #${commitCount})`);
-        children.push({ object: "block", type: "divider", divider: {} });
+        commitBlocks.push({ object: "block", type: "divider", divider: {} });
       }
 
-      // Append new commit to the parent toggle (goes to bottom)
-      console.log("📤 Appending new commit entry...");
-      await this.notion.blocks.children.append({
-        block_id: parentToggle.id,
-        children: children,
-      });
+      // Find or create the branch sub-toggle
+      const branchName = versionEntry.branch;
+      console.log(`🔀 Looking for branch toggle: ${branchName}...`);
+      const existingBranchId = await this.findBranchToggle(
+        parentToggle.id,
+        branchName,
+      );
+
+      if (existingBranchId) {
+        // Branch toggle exists — append the commit inside it
+        console.log(`✅ Found existing branch toggle: ${existingBranchId}`);
+        console.log("📤 Appending commit to branch toggle...");
+        await this.notion.blocks.children.append({
+          block_id: existingBranchId,
+          children: commitBlocks,
+        });
+      } else {
+        // Create a new branch toggle with the commit as its first child
+        console.log(`🆕 Creating new branch toggle: ${branchName}`);
+        await this.notion.blocks.children.append({
+          block_id: parentToggle.id,
+          children: [
+            {
+              object: "block",
+              type: "toggle",
+              toggle: {
+                rich_text: [
+                  {
+                    type: "text",
+                    text: { content: `🔀 ${branchName}` },
+                    annotations: { bold: true },
+                  },
+                ],
+                color: "blue_background",
+                children: commitBlocks,
+              },
+            },
+          ],
+        });
+      }
 
       console.log("✅ Successfully updated Notion page!");
     } catch (error) {
@@ -258,27 +312,34 @@ class NotionStructureUpdater {
 
   /**
    * Read the structure hash from the newest commit toggle's callout.
+   * Searches inside branch sub-toggles for the most recent commit.
    */
   async getExistingVersionHash(pageId) {
     try {
       const parentToggle = await this.findParentToggle(pageId);
       if (!parentToggle) return null;
 
-      // Get children of parent toggle (commit toggles, newest is first)
-      const children = await this.getBlockChildren(parentToggle.id);
+      // Get children of parent toggle (branch sub-toggles)
+      const branchToggles = await this.getBlockChildren(parentToggle.id);
 
-      for (const child of children) {
-        if (child.type === "toggle" && child.has_children) {
-          // Look inside the first commit toggle for its callout
-          const innerBlocks = await this.getBlockChildren(child.id);
-          for (const inner of innerBlocks) {
-            if (inner.type === "callout") {
-              const text = inner.callout?.rich_text?.[0]?.plain_text || "";
-              const match = text.match(/Hash: ([a-z0-9-]+)/i);
-              if (match) return match[1];
+      for (const branch of branchToggles) {
+        if (branch.type === "toggle" && branch.has_children) {
+          // Look inside this branch toggle for commit toggles
+          const commits = await this.getBlockChildren(branch.id);
+          for (const commit of commits) {
+            if (commit.type === "toggle" && commit.has_children) {
+              // Look inside the commit toggle for its callout
+              const innerBlocks = await this.getBlockChildren(commit.id);
+              for (const inner of innerBlocks) {
+                if (inner.type === "callout") {
+                  const text = inner.callout?.rich_text?.[0]?.plain_text || "";
+                  const match = text.match(/Hash: ([a-z0-9-]+)/i);
+                  if (match) return match[1];
+                }
+              }
+              return null; // Only check the newest commit in the first branch
             }
           }
-          break; // Only check the first (newest) commit toggle
         }
       }
     } catch (error) {
