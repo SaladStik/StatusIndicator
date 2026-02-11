@@ -133,7 +133,6 @@ class NotionStructureUpdater {
               content:
                 `Version: ${versionEntry.version}\n` +
                 `Branch: ${versionEntry.branch}\n` +
-                `${versionEntry.commitMessage || ""}\n` +
                 `Hash: ${structureHash}`,
             },
           },
@@ -145,6 +144,24 @@ class NotionStructureUpdater {
         color: "red_background",
       },
     });
+
+    // Full commit message callout (grey)
+    if (versionEntry.commitMessage) {
+      toggleChildren.push({
+        object: "block",
+        type: "callout",
+        callout: {
+          rich_text: [
+            {
+              type: "text",
+              text: { content: versionEntry.commitMessage },
+            },
+          ],
+          icon: { type: "emoji", emoji: "💬" },
+          color: "gray_background",
+        },
+      });
+    }
 
     // Commit link
     if (versionEntry.commitUrl) {
@@ -187,7 +204,7 @@ class NotionStructureUpdater {
       },
     });
 
-    // Format the toggle title
+    // Format the toggle title — first line of commit message only
     const shortSha = versionEntry.commitSha?.substring(0, 7) || "unknown";
     const dateStr = new Date(versionEntry.timestamp).toLocaleString("en-US", {
       year: "numeric",
@@ -198,9 +215,12 @@ class NotionStructureUpdater {
       timeZone: "America/Denver",
       timeZoneName: "short",
     });
-    const shortMsg =
-      versionEntry.commitMessage?.substring(0, 120)?.trim() || "";
-    const msgSuffix = versionEntry.commitMessage?.length > 120 ? "…" : "";
+    const fullMsg = (versionEntry.commitMessage || "").trim();
+    const firstLine = fullMsg.split(/\r?\n/)[0]?.trim() || "";
+    const shortMsg = firstLine.substring(0, 120);
+    const isMultiLine = fullMsg.includes("\n");
+    const msgSuffix =
+      shortMsg.length < firstLine.length || isMultiLine ? "…" : "";
     const toggleTitle = `${shortSha} — ${versionEntry.author} — ${dateStr} — ${shortMsg}${msgSuffix}`;
 
     return {
