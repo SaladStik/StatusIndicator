@@ -169,23 +169,6 @@ class NotionStructureUpdater {
       });
     }
 
-    // Structure diagram (split into 2000-char chunks for Notion API limit)
-    const codeChunks = [];
-    for (let i = 0; i < mermaidCode.length; i += 2000) {
-      codeChunks.push({
-        type: "text",
-        text: { content: mermaidCode.substring(i, i + 2000) },
-      });
-    }
-    toggleChildren.push({
-      object: "block",
-      type: "code",
-      code: {
-        rich_text: codeChunks,
-        language: "mermaid",
-      },
-    });
-
     // Format the toggle title — first line of commit message only
     const shortSha = versionEntry.commitSha?.substring(0, 7) || "unknown";
     const dateStr = new Date(versionEntry.timestamp).toLocaleString("en-US", {
@@ -263,6 +246,27 @@ class NotionStructureUpdater {
             },
           },
         ],
+      },
+    };
+  }
+
+  /**
+   * Build the mermaid structure diagram code block.
+   */
+  buildMermaidCodeBlock(mermaidCode) {
+    const codeChunks = [];
+    for (let i = 0; i < mermaidCode.length; i += 2000) {
+      codeChunks.push({
+        type: "text",
+        text: { content: mermaidCode.substring(i, i + 2000) },
+      });
+    }
+    return {
+      object: "block",
+      type: "code",
+      code: {
+        rich_text: codeChunks,
+        language: "mermaid",
       },
     };
   }
@@ -352,42 +356,46 @@ class NotionStructureUpdater {
         });
       }
 
-      // Second API call: append the commit message callout inside the commit toggle.
-      // This is separate because Notion limits nesting to 2 levels per append.
-      if (versionEntry.commitMessage) {
-        let commitToggleId;
+      // Second API call: append commit message callout + mermaid diagram
+      // inside the commit toggle. Separate call due to Notion's 2-level nesting limit.
+      let commitToggleId;
 
-        if (existingBranchId) {
-          // We appended directly — the commit toggle is in the result
-          const commitToggleBlock = appendResult.results?.find(
+      if (existingBranchId) {
+        // We appended directly — the commit toggle is in the result
+        const commitToggleBlock = appendResult.results?.find(
+          (b) => b.type === "toggle",
+        );
+        commitToggleId = commitToggleBlock?.id;
+      } else {
+        // We created a new branch toggle — the commit toggle is nested inside it
+        const branchToggleBlock = appendResult.results?.find(
+          (b) => b.type === "toggle",
+        );
+        if (branchToggleBlock) {
+          const branchChildren = await this.getBlockChildren(
+            branchToggleBlock.id,
+          );
+          const commitToggleBlock = branchChildren.find(
             (b) => b.type === "toggle",
           );
           commitToggleId = commitToggleBlock?.id;
-        } else {
-          // We created a new branch toggle — the commit toggle is nested inside it
-          const branchToggleBlock = appendResult.results?.find(
-            (b) => b.type === "toggle",
-          );
-          if (branchToggleBlock) {
-            const branchChildren = await this.getBlockChildren(
-              branchToggleBlock.id,
-            );
-            const commitToggleBlock = branchChildren.find(
-              (b) => b.type === "toggle",
-            );
-            commitToggleId = commitToggleBlock?.id;
-          }
         }
+      }
 
-        if (commitToggleId) {
-          console.log("💬 Appending commit message callout...");
-          await this.notion.blocks.children.append({
-            block_id: commitToggleId,
-            children: [
-              this.buildCommitMessageCallout(versionEntry.commitMessage),
-            ],
-          });
+      if (commitToggleId) {
+        const secondaryBlocks = [];
+        if (versionEntry.commitMessage) {
+          secondaryBlocks.push(
+            this.buildCommitMessageCallout(versionEntry.commitMessage),
+          );
         }
+        secondaryBlocks.push(this.buildMermaidCodeBlock(mermaidCode));
+
+        console.log("💬 Appending commit message & mermaid diagram...");
+        await this.notion.blocks.children.append({
+          block_id: commitToggleId,
+          children: secondaryBlocks,
+        });
       }
 
       console.log("✅ Successfully updated Notion page!");
