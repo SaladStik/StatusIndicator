@@ -1,0 +1,21 @@
+{
+  "name": "notion-git-structure-sync",
+  "version": "1.0.0",
+  "description": "Sync Git repository structure to Notion with version history",
+  "main": "update-notion-structure.js",
+  "scripts": {
+    "start": "node update-notion-structure.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "notion",
+    "git",
+    "automation",
+    "documentation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15"
+  }
+}
