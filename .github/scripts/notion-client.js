@@ -145,20 +145,44 @@ class NotionStructureUpdater {
       },
     });
 
-    // Full commit message callout (grey)
+    // Full commit message in a grey callout with a nested toggle
     if (versionEntry.commitMessage) {
       toggleChildren.push({
         object: "block",
         type: "callout",
         callout: {
-          rich_text: [
-            {
-              type: "text",
-              text: { content: versionEntry.commitMessage },
-            },
-          ],
+          rich_text: [],
           icon: { type: "emoji", emoji: "💬" },
           color: "gray_background",
+          children: [
+            {
+              object: "block",
+              type: "toggle",
+              toggle: {
+                rich_text: [
+                  {
+                    type: "text",
+                    text: { content: "Click To View Commit Message" },
+                    annotations: { bold: true },
+                  },
+                ],
+                children: [
+                  {
+                    object: "block",
+                    type: "paragraph",
+                    paragraph: {
+                      rich_text: [
+                        {
+                          type: "text",
+                          text: { content: versionEntry.commitMessage },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
         },
       });
     }
